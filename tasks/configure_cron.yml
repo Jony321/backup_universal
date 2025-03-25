@@ -1,7 +1,7 @@
-- name: Create cron job for backupsbackups
+- name: Create cron job for backups
   cron:
-    name: "Backup {{ item.database_type }}"}"
-    minute: "{{ item.cron_minute | default('0') }}"efault('0') }}"
-    hour: "{{ item.cron_hour | default('2') }}"fault('2') }}"
-    job: "docker run --rm backup_container:latest /usr/local/bin/backup_{{ item.database_type }}.sh"up_container:latest /usr/local/bin/backup_{{ item.database_type }}.sh"
+    name: "Backup {{ item.database_type }}"
+    minute: "{{ item.cron_minute | default('0') }}"
+    hour: "{{ item.cron_hour | default('2') }}"
+    job: "docker run --rm backup_container:latest /usr/local/bin/backup_{{ item.database_type }}.sh"
   with_items: "{{ backup.databases }}"
