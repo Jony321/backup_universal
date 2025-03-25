@@ -69,6 +69,11 @@
     mode: "600"
   when: backup_notifications.enabled and backup_notifications.apprise_target != ""
 
+- name: Copy Dockerfile to Docker context
+  copy:
+    src: Dockerfile
+    dest: "{{ docker_context.path }}/Dockerfile"
+
 - name: Build Docker image for backup
   command: >
     docker build -t backup_container:latest {{ docker_context.path }}
