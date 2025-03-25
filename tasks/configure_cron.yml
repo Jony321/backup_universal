@@ -1,13 +1,7 @@
-- name: Configure cron tasks
+- name: Create cron job for backupsbackups
   cron:
-    name: "Backup {{ item.name_backup }}"
-    minute: "{{ item.cron.minute }}"
-    hour: "{{ item.cron.hour  }}"
-    day: "{{ item.cron.day }}"
-    weekday: "{{ item.cron.weekday }}"
-    month: "{{ item.cron.month }}"
-    job: |
-
-          /usr/local/bin/{{ item.database_type }}/backup.sh -n {{ item.name_backup }} -d {{ item.aws_dest }} -t {{ item.tmp_dir }} -r {{ item.retain_count }} -e {{ item.filter_date }} -a {{ item.aws_endpoint }} -l {{ item.use_local }}  >> /var/log/files_backup.log 2>&1
-
+    name: "Backup {{ item.database_type }}"}"
+    minute: "{{ item.cron_minute | default('0') }}"efault('0') }}"
+    hour: "{{ item.cron_hour | default('2') }}"fault('2') }}"
+    job: "docker run --rm backup_container:latest /usr/local/bin/backup_{{ item.database_type }}.sh"up_container:latest /usr/local/bin/backup_{{ item.database_type }}.sh"
   with_items: "{{ backup.databases }}"

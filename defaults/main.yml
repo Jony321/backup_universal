@@ -1,6 +1,6 @@
 ---
 backup_notifications:
-  enabled: true
+  enabled: false
   apprise_target: ""
   requirements:
     - python3
@@ -59,3 +59,24 @@ backup:
         day: "*"
         weekday: "*"
         month: "*"
+  - name: "example_db"
+    database_type: "postgresql"
+    cron_minute: "0"
+    cron_hour: "2"
+  docker_image: "backup_container:latest"
+
+## Использование роли
+
+Эта роль создает резервные копии баз данных в Docker-контейнере. Контейнер собирается на основе легкого образа PostgreSQL и содержит все необходимые скрипты и конфигурации.
+
+### Параметры
+
+- `backup.databases`: Список баз данных для резервного копирования.
+- `backup.docker_image`: Имя Docker-образа для резервного копирования.
+
+### Пример использования
+
+```yaml
+- hosts: all
+  roles:
+    - backup_universal

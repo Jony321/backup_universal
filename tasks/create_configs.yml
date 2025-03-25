@@ -36,3 +36,33 @@
     path: /etc/backup/apprise_config
     state: absent
   when: not backup_notifications.enabled or backup_notifications.apprise_target == ""
+
+- name: Create a temporary directory for Docker context
+  tempfile:
+    state: directory
+    suffix: backup_docker_context
+  register: docker_context
+
+- name: Create AWS credentials file in Docker context
+  template:
+    src: credentials.j2
+    dest: "{{ docker_context.path }}/credentials"
+    mode: "600"
+
+- name: Create backup scripts in Docker context
+  template:
+    src: "{{ item.database_type }}.j2"
+    dest: "{{ docker_context.path }}/backup_{{ item.database_type }}.sh"
+    mode: "700"
+  with_items: "{{ backup.databases }}"
+
+- name: Copy Apprise config to Docker context
+  template:
+    src: "apprise_config.j2"
+    dest: "{{ docker_context.path }}/apprise_config"
+    mode: "600"
+  when: backup_notifications.enabled and backup_notifications.apprise_target != ""
+
+- name: Build Docker image for backup
+  command: >
+    docker build -t backup_container:latest {{ docker_context.path }}
