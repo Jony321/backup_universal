@@ -43,13 +43,17 @@
     suffix: backup_docker_context
   register: docker_context
 
+- name: Debug docker_context variable
+  debug:
+    var: docker_context
+
 - name: Create AWS credentials file in Docker context
   copy:
     content: |
       [default]
       aws_access_key_id = {{ backup.aws_access_key }}
       aws_secret_access_key = {{ backup.aws_secret_key }}
-    dest: "/tmp/aws_credentials"
+    dest: "{{ docker_context.path }}/aws_credentials"
 
 - name: Create backup scripts in Docker context
   template:
