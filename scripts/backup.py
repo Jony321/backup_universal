@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import os
 import boto3
+import logging
 import argparse
 import traceback
 import subprocess
@@ -8,6 +9,18 @@ import configparser
 
 from botocore.config import Config
 from datetime import datetime, timedelta, timezone
+
+
+def setup_logging(level: str = "INFO"):
+    logging.basicConfig(
+        level=getattr(logging, level.upper(), logging.INFO),
+        format="%(asctime)s [%(levelname)s] %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
+    )
+    return logging.getLogger("backuper")
+
+
+log = setup_logging()
 
 
 class Backuper:
@@ -24,9 +37,8 @@ class Backuper:
             bucket_dir: str,
             retain_count: int,
             exp_date: int,
-            container_name: int,
+            container_name: str,
             credentials_file: str,
-            aws_region: str,
             aws_endpoint_url: str,
             tmp_dir: str,
             apprise_conf: str
@@ -46,7 +58,6 @@ class Backuper:
         self.container_name = container_name
         self.credentials_file = credentials_file
         self.aws_access_key_id, self.aws_secret_access_key = self.__get_aws_credentials()
-        self.aws_region = aws_region
         self.aws_endpoint_url = aws_endpoint_url
         self.tmp_dir = tmp_dir
         self.apprise_conf = apprise_conf
@@ -59,36 +70,37 @@ class Backuper:
         return config['default']['aws_access_key_id'], config['default']['aws_secret_access_key']
 
     def backup(self):
+        os.makedirs(self.tmp_dir, exist_ok=True)
         archive_name = f"{datetime.now(timezone.utc).strftime('%Y-%m-%d_%H-%M')}_{self.name_backup}"
         tmp_path = os.path.join(self.tmp_dir, archive_name)
-        сontainer_dump_path = os.path.join('/tmp', archive_name)
+        container_dump_path = os.path.join('/tmp', archive_name)
 
         try:
             if self.container_name:
-                print(f"Starting {self.db_type} backup: {archive_name} in container: {self.container_name}\n")   
+                log.info(f"Starting {self.db_type} backup '{archive_name}' in container '{self.container_name}'")
                 if self.db_type == "mysql":
-                    result = self.__backup_mysql_docker(сontainer_dump_path)
+                    result = self.__backup_mysql_docker(container_dump_path)
                 if self.db_type == "postgres":
-                    result = self.__backup_postgres_docker(сontainer_dump_path)
+                    result = self.__backup_postgres_docker(container_dump_path)
                 if self.db_type == "mongo":
-                    result = self.__backup_mongo_docker(сontainer_dump_path)
+                    result = self.__backup_mongo_docker(container_dump_path)
 
                 self.__check_result_backup(result)
 
                 # Verify dump file exists in the container
                 subprocess.run([
-                    "docker", "exec", self.container_name, "test", "-f", сontainer_dump_path
+                    "docker", "exec", self.container_name, "test", "-f", container_dump_path
                 ], check=True)
 
-                print(f"Copying dump file from container to directory: {self.tmp_dir}\n")
+                log.info(f"Copying dump file from container to host: {self.tmp_dir}")
                 subprocess.run([
-                    "docker", "cp", f"{self.container_name}:{сontainer_dump_path}", tmp_path
+                    "docker", "cp", f"{self.container_name}:{container_dump_path}", tmp_path
                 ], check=True)
                 subprocess.run([
-                    "docker", "exec", self.container_name, "rm", сontainer_dump_path
+                    "docker", "exec", self.container_name, "rm", container_dump_path
                 ], check=True)
             else:
-                print(f"Starting {self.db_type} backup: {archive_name} from host\n")  
+                log.info(f"Starting {self.db_type} backup '{archive_name}' from host")
                 with open(tmp_path, 'wb') as f: 
                     if self.db_type == "mysql":
                         result = self.__backup_mysql_host(f)
@@ -107,42 +119,47 @@ class Backuper:
             if self.apprise_conf:
                 self.__send_notification("Backup Completed", f"Backup {self.name_backup} completed successfully.", self.apprise_conf)
             else:
-                print("No Apprise configuration provided. Skipping notification.\n")
+                log.warning("No Apprise configuration provided. Skipping notification.")
         except Exception as e:
-            print(f"Backup {self.db_type} failed!\n")
+            log.exception(f"Backup {self.db_type} failed: {e}")
             traceback.print_exc()
             self.__send_notification("Backup Failed", f"{self.db_type} backup failed: {str(e)}")
+        finally:
+            if os.path.exists(tmp_path):
+                os.remove(tmp_path)
+            if os.path.exists(f"{tmp_path}.gz"):
+                os.remove(f"{tmp_path}.gz")
 
-    def __backup_mysql_docker(self, сontainer_dump_path):
+    def __backup_mysql_docker(self, container_dump_path):
         result = subprocess.run(
             [
                 "docker", "exec", self.container_name, "mysqldump",
                 "-u", self.db_user, f"-p{self.db_password}",
-                self.db_name, "-r", сontainer_dump_path
+                self.db_name, "-r", container_dump_path
             ], 
             capture_output=True, text=True
         )
 
         return result
 
-    def __backup_postgres_docker(self, сontainer_dump_path):
+    def __backup_postgres_docker(self, container_dump_path):
         result = subprocess.run(
             [
                 "docker", "exec", self.container_name, "pg_dump",
                     f"postgresql://{self.db_user}:{self.db_password}@"
                     f"{self.db_host}:{self.db_port}/{self.db_name}",
-                    "-f", сontainer_dump_path
+                    "-f", container_dump_path
             ], 
             check=True
         )
 
         return result
 
-    def __backup_mongo_docker(self, сontainer_dump_path):
+    def __backup_mongo_docker(self, container_dump_path):
         result = subprocess.run(
             [
                 "docker", "exec", self.container_name, "mongodump",
-                "--db", self.database_name, "--archive", сontainer_dump_path
+                "--db", self.db_name, "--archive", container_dump_path
             ], 
             check=True
         )
@@ -160,22 +177,23 @@ class Backuper:
         result = subprocess.run([
             "pg_dump", f"postgresql://{self.db_user}:{self.db_password}@"
             f"{self.db_host}:{self.db_port}/{self.db_name}"
-        ], check=True)
+        ], stdout=f, check=True)
         
         return result
 
     def __backup_mongo_host(self, f):
         result = subprocess.run([
-            "mongodump", "--db", config['database_name'], "--archive"
+            "mongodump", "--db", self.db_name, "--archive"
         ], stdout=f, check=True)
 
         return result
 
     def __check_result_backup(self, result):
         if result is None:
-            raise Exception(f"{self.db_type} backup failed:\n Wrong db_type \n")
-        if result.returncode != 0:
-            raise Exception(f"{self.db_type} backup failed:\n{result.stderr}\n")
+            raise Exception(f"{self.db_type} backup failed: wrong db_type\n")
+        if hasattr(result, "returncode") and result.returncode != 0:
+            err = getattr(result, "stderr", "Unknown error")
+            raise Exception(f"{self.db_type} backup failed:\n{err}\n")
     
     def __upload_to_s3(self, file_path, key):
         config = Config(
@@ -185,51 +203,50 @@ class Backuper:
         s3 = boto3.client(
             's3',
             config=config,
-            endpoint_url=self.aws_endpoint,
-            aws_access_key_id=self.aws_access_key,
-            aws_secret_access_key=self.aws_secret_key
+            endpoint_url=self.aws_endpoint_url,
+            aws_access_key_id=self.aws_access_key_id,
+            aws_secret_access_key=self.aws_secret_access_key
         )             
             
         print(f"Uploading to S3 bucket '{self.bucket_name}' with key '{key}'\n")
         
         try:
-            print(f"Uploading {file_path} to S3...\n")
+            log.info(f"Uploading '{file_path}' to S3 bucket '{self.bucket_name}' as '{key}'")
             s3.upload_file(file_path, self.bucket_name, key)
-            print(f"File uploaded: {file_path}\n")
+            log.info(f"File uploaded: {file_path}")
             os.remove(file_path)
 
         except Exception as e:
+            log.exception(f"Upload failed for {file_path}: {e}")
             self.__send_notification("Upload Failed", f"Failed to upload {file_path} to S3: {str(e)}")
-            print(f"Upload failed: {file_path} - {str(e)}\n")
 
-    def __send_notification(title, message, config_path=None):
+    def __send_notification(self, title, message, config_path=None):
         if os.path.exists("/usr/local/bin/apprise") and config_path and os.path.exists(config_path):
             subprocess.run(["/usr/local/bin/apprise", "-t", title, "-b", message, "--config", config_path])
         else:
-            print(f"Notification skipped: Apprise config not provided or not found.\n")
+            log.warning("Notification skipped: Apprise not configured or not found.")
 
     def rotate_backups(self):
-        s3 = boto3.client('s3', endpoint_url=self.aws_endpoint, aws_access_key_id=self.aws_access_key, aws_secret_access_key=self.aws_secret_key)
+        s3 = boto3.client('s3', endpoint_url=self.aws_endpoint_url, aws_access_key_id=self.aws_access_key_id, aws_secret_access_key=self.aws_secret_access_key)
 
-        print(f"Rotating backups in bucket '{self.bucket_name}' under prefix '{self.bucket_dir}'\n")
-        
+        log.info(f"Rotating backups in bucket '{self.bucket_name}' under prefix '{self.bucket_dir}'")
         objects = s3.list_objects_v2(Bucket=self.bucket_name, Prefix=self.bucket_dir).get('Contents', [])
         if not objects:
-            print("No objects found for rotation.\n")
+            log.info("No objects found for rotation.")
             return
 
         sorted_objects = sorted(objects, key=lambda x: x['LastModified'])
 
         if self.retain_count:
             for obj in sorted_objects[:-self.retain_count]:
-                print(f"Deleting due to retain count: {obj['Key']}\n")
+                log.info(f"Deleting due to retain count: {obj['Key']}")
                 s3.delete_object(Bucket=self.bucket_name, Key=obj['Key'])
 
-        if exp_date:
-            exp_date = datetime.now(timezone.utc) - timedelta(seconds=int(exp_date))
+        if self.exp_date:
+            exp_date = datetime.now(timezone.utc) - timedelta(seconds=int(self.exp_date))
             for obj in sorted_objects:
                 if obj['LastModified'] < exp_date:
-                    print(f"Deleting due to expiration date: {obj['Key']}\n")
+                    log.info(f"Deleting due to expiration date: {obj['Key']}")
                     s3.delete_object(Bucket=self.bucket_name, Key=obj['Key'])
 
 
@@ -247,10 +264,8 @@ def parse_arguments():
     parser.add_argument("-r", "--retain_count", type=int, help="Number of backups to retain")
     parser.add_argument("-e", "--exp_date", type=int, help="Expiration date in seconds (optional)")
     parser.add_argument("--container_name", help="Docker container name (optional)")
-    parser.add_argument("--aws_endpoint", help="AWS S3 endpoint (optional)")
+    parser.add_argument("--aws_endpoint_url", help="AWS S3 endpoint (optional)")
     parser.add_argument("--tmp_dir", default="/tmp", help="Temporary directory for backups")
-    parser.add_argument("--aws_access_key", help="AWS access key (optional)")
-    parser.add_argument("--aws_secret_key", help="AWS secret key (optional)")
     parser.add_argument("--credentials_file", required=True, help="Path to the AWS credentials file")
     parser.add_argument("--apprise_config", help="Path to the Apprise configuration file (optional)")
     return vars(parser.parse_args())
@@ -272,7 +287,6 @@ if __name__ == "__main__":
         exp_date=config["exp_date"],
         container_name=config["container_name"],
         credentials_file=config["credentials_file"],
-        aws_region=config["aws_region"],
         aws_endpoint_url=config["aws_endpoint_url"],
         tmp_dir=config["tmp_dir"],
         apprise_conf=config["apprise_config"]
