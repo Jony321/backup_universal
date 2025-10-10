@@ -21,7 +21,7 @@
         {% if item.retain_count is defined %}-r {{ item.retain_count }}{% endif %} \
         {% if item.exp_date is defined and item.exp_date|length > 0 %}-e {{ item.exp_date }}{% endif %} \
         {% if item.container_name is defined %}--container_name {{ item.container_name }}{% endif %} \
-        {% if item.aws_endpoint is defined %}--aws_endpoint {{ item.aws_endpoint }}{% endif %} \
+        {% if item.aws_endpoint is defined %}--aws_endpoint_url {{ item.aws_endpoint }}{% endif %} \
         {% if item.tmp_dir is defined %}--tmp_dir {{ item.tmp_dir }}{% endif %} \
         {% if item.notifications.enabled is defined and item.notifications.enabled %}--apprise_config /etc/backup/apprise_config_{{ item.name_backup }}{% endif %} \
         --credentials_file /usr/local/bin/backup_universal/credentials_{{ item.name_backup }} \

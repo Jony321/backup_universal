@@ -9,10 +9,8 @@ backups:
     database_port: 5432
     tmp_dir: "/tmp"
     bucket_name: ""
-    bucket_prefix: "/backups"
+    bucket_prefix: "backups"
     aws_endpoint: ""
-    aws_access_key: ""  # AWS access key
-    aws_secret_key: ""  # AWS secret key
     retain_count: 5
     exp_date: null  # Expiration in seconds
     notifications:
