@@ -207,8 +207,6 @@ class Backuper:
             aws_access_key_id=self.aws_access_key_id,
             aws_secret_access_key=self.aws_secret_access_key
         )             
-            
-        print(f"Uploading to S3 bucket '{self.bucket_name}' with key '{key}'\n")
         
         try:
             log.info(f"Uploading '{file_path}' to S3 bucket '{self.bucket_name}' as '{key}'")
