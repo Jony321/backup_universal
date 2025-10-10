@@ -21,6 +21,7 @@ backups:
     database_port: 5432  # Database port
     tmp_dir: "/tmp"  # Temporary directory for backups
     bucket_name: ""  # Bucket name
+    bucket_prefix: "/backups" 
     aws_endpoint: ""  # S3 endpoint URL
     retain_count: 5  # Number of backups to retain
     exp_date: null  # Expiration in seconds

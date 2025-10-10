@@ -17,7 +17,7 @@
         -p {{ item.database_password }} \
         -H {{ item.database_host }} \
         -P {{ item.database_port }} \
-        -D {{ (item.database_type | lower) + '_' + ansible_host }} \
+        -D {{ item.bucket_prefix }} \
         {% if item.retain_count is defined %}-r {{ item.retain_count }}{% endif %} \
         {% if item.exp_date is defined and item.exp_date|length > 0 %}-e {{ item.exp_date }}{% endif %} \
         {% if item.container_name is defined %}--container_name {{ item.container_name }}{% endif %} \
